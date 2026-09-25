@@ -10,10 +10,7 @@
     "dev": "tsx watch --env-file=.env src/main.ts",
     "start": "tsx --env-file=.env src/main.ts",
     "test": "tsx --test \"src/**/*.test.ts\"",
-    "typecheck": "tsc --noEmit",
-    "cursor": "tsx --env-file=.env scripts/set-cursor.ts",
-    "try": "tsx --env-file=.env scripts/try.ts",
-    "replay": "tsx --env-file=.env scripts/replay.ts"
+    "typecheck": "tsc --noEmit"
   },
   "repository": {
     "type": "git",
