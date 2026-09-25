@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { z } from "zod";
 
 export type PullRequestEvent = {
   action: string;
@@ -7,6 +8,19 @@ export type PullRequestEvent = {
   author: string;
   htmlUrl: string;
 };
+
+const pullRequestPayloadSchema = z.object({
+  action: z.string(),
+  repository: z.object({
+    full_name: z.string(),
+  }),
+  pull_request: z.object({
+    number: z.number(),
+    title: z.string(),
+    html_url: z.string(),
+    user: z.object({ login: z.string() }).optional(),
+  }),
+});
 
 export function verifyGitHubSignature(rawBody: string, signatureHeader: string | undefined, secret: string): boolean {
   if (!signatureHeader?.startsWith("sha256=")) {
@@ -24,44 +38,21 @@ export function verifyGitHubSignature(rawBody: string, signatureHeader: string |
 }
 
 export function pullRequestEventFromPayload(payload: unknown, expectedRepo: string): PullRequestEvent | undefined {
-  if (!payload || typeof payload !== "object") {
+  const parsed = pullRequestPayloadSchema.safeParse(payload);
+  if (!parsed.success) {
     return undefined;
   }
 
-  const body = payload as Record<string, unknown>;
-  const repository = body.repository;
-  const pullRequest = body.pull_request;
-
-  if (!repository || typeof repository !== "object" || !pullRequest || typeof pullRequest !== "object") {
-    return undefined;
-  }
-
-  const fullName = (repository as Record<string, unknown>).full_name;
-  if (fullName !== expectedRepo) {
-    return undefined;
-  }
-
-  const pr = pullRequest as Record<string, unknown>;
-  const user = pr.user;
-  const author =
-    user && typeof user === "object" && typeof (user as Record<string, unknown>).login === "string"
-      ? ((user as Record<string, unknown>).login as string)
-      : "";
-
-  if (
-    typeof body.action !== "string" ||
-    typeof pr.number !== "number" ||
-    typeof pr.title !== "string" ||
-    typeof pr.html_url !== "string"
-  ) {
+  const body = parsed.data;
+  if (body.repository.full_name !== expectedRepo) {
     return undefined;
   }
 
   return {
     action: body.action,
-    number: pr.number,
-    title: pr.title,
-    author,
-    htmlUrl: pr.html_url,
+    number: body.pull_request.number,
+    title: body.pull_request.title,
+    author: body.pull_request.user?.login ?? "",
+    htmlUrl: body.pull_request.html_url,
   };
 }

@@ -1,3 +1,31 @@
+import { z } from "zod";
+
+const jiraEnvSchema = z.object({
+  JIRA_EMAIL: z.string().min(1),
+  JIRA_API_TOKEN: z.string().min(1),
+  JIRA_CLOUD_ID: z.string().min(1),
+});
+
+const jiraIssueResponseSchema = z.object({
+  key: z.string(),
+  fields: z.object({
+    summary: z.string(),
+    status: z.object({
+      name: z.string(),
+    }),
+  }),
+});
+
+const jiraTransitionsResponseSchema = z.object({
+  transitions: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      to: z.object({ name: z.string() }).optional(),
+    }),
+  ),
+});
+
 export type JiraIssue = {
   key: string;
   summary: string;
@@ -9,26 +37,8 @@ export type JiraClient = {
   transitionIssue: (key: string, statusName: string) => Promise<void>;
 };
 
-type JiraTransition = {
-  id: string;
-  name: string;
-  to?: { name?: string };
-};
-
 export function createJiraClient(env: NodeJS.ProcessEnv = process.env): JiraClient {
-  const email = env.JIRA_EMAIL;
-  const token = env.JIRA_API_TOKEN;
-  const cloudId = env.JIRA_CLOUD_ID;
-
-  if (!email) {
-    throw new Error("JIRA_EMAIL is required");
-  }
-  if (!token) {
-    throw new Error("JIRA_API_TOKEN is required");
-  }
-  if (!cloudId) {
-    throw new Error("JIRA_CLOUD_ID is required");
-  }
+  const { JIRA_EMAIL: email, JIRA_API_TOKEN: token, JIRA_CLOUD_ID: cloudId } = jiraEnvSchema.parse(env);
 
   const baseUrl = `https://api.atlassian.com/ex/jira/${cloudId}/rest/api/3`;
   const authorization = `Basic ${Buffer.from(`${email}:${token}`).toString("base64")}`;
@@ -54,14 +64,7 @@ export function createJiraClient(env: NodeJS.ProcessEnv = process.env): JiraClie
 
   async function getIssue(key: string): Promise<JiraIssue> {
     const response = await request(`/issue/${encodeURIComponent(key)}?fields=summary,status`);
-    const data = (await response.json()) as {
-      key?: string;
-      fields?: { summary?: string; status?: { name?: string } };
-    };
-
-    if (!data.key || !data.fields?.summary || !data.fields.status?.name) {
-      throw new Error(`Jira issue ${key} was missing key, summary, or status`);
-    }
+    const data = jiraIssueResponseSchema.parse(await response.json());
 
     return {
       key: data.key,
@@ -73,8 +76,7 @@ export function createJiraClient(env: NodeJS.ProcessEnv = process.env): JiraClie
   async function transitionIssue(key: string, statusName: string): Promise<void> {
     const encodedKey = encodeURIComponent(key);
     const response = await request(`/issue/${encodedKey}/transitions`);
-    const data = (await response.json()) as { transitions?: JiraTransition[] };
-    const transitions = data.transitions ?? [];
+    const { transitions } = jiraTransitionsResponseSchema.parse(await response.json());
     const wanted = statusName.toLowerCase();
     const match = transitions.find((transition) => {
       const toName = transition.to?.name ?? transition.name;
