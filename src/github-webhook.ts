@@ -1,25 +1,39 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 
-export type PullRequestEvent = {
-  action: string;
-  number: number;
-  title: string;
-  author: string;
-  htmlUrl: string;
+export type GitHubEventSummary = {
+  eventName: string;
+  action?: string;
+  repository?: string;
+  pullRequest?: {
+    number: number;
+    title: string;
+    body: string | null;
+    author: string;
+    htmlUrl: string;
+    merged?: boolean;
+    branch?: string;
+  };
 };
 
-const pullRequestPayloadSchema = z.object({
-  action: z.string(),
-  repository: z.object({
-    full_name: z.string(),
-  }),
-  pull_request: z.object({
-    number: z.number(),
-    title: z.string(),
-    html_url: z.string(),
-    user: z.object({ login: z.string() }).optional(),
-  }),
+const githubWebhookPayloadSchema = z.object({
+  action: z.string().optional(),
+  repository: z
+    .object({
+      full_name: z.string(),
+    })
+    .optional(),
+  pull_request: z
+    .object({
+      number: z.number(),
+      title: z.string(),
+      html_url: z.string(),
+      body: z.string().nullable().optional(),
+      merged: z.boolean().optional(),
+      user: z.object({ login: z.string() }).optional(),
+      head: z.object({ ref: z.string() }).optional(),
+    })
+    .optional(),
 });
 
 export function verifyGitHubSignature(rawBody: string, signatureHeader: string | undefined, secret: string): boolean {
@@ -37,22 +51,48 @@ export function verifyGitHubSignature(rawBody: string, signatureHeader: string |
   return timingSafeEqual(Buffer.from(expected), Buffer.from(received));
 }
 
-export function pullRequestEventFromPayload(payload: unknown, expectedRepo: string): PullRequestEvent | undefined {
-  const parsed = pullRequestPayloadSchema.safeParse(payload);
+export function githubEventSummaryFromPayload(
+  payload: unknown,
+  eventName: string,
+  expectedRepo: string,
+  authorFilter?: string,
+): GitHubEventSummary | undefined {
+  const parsed = githubWebhookPayloadSchema.safeParse(payload);
   if (!parsed.success) {
-    return undefined;
+    return { eventName };
   }
 
   const body = parsed.data;
-  if (body.repository.full_name !== expectedRepo) {
+  const repository = body.repository?.full_name;
+  if (repository && repository !== expectedRepo) {
+    return undefined;
+  }
+
+  const pullRequest = body.pull_request
+    ? {
+        number: body.pull_request.number,
+        title: body.pull_request.title,
+        body: body.pull_request.body ?? null,
+        author: body.pull_request.user?.login ?? "",
+        htmlUrl: body.pull_request.html_url,
+        merged: body.pull_request.merged,
+        branch: body.pull_request.head?.ref,
+      }
+    : undefined;
+
+  const allowedAuthors = authorFilter
+    ?.split(",")
+    .map((login) => login.trim())
+    .filter(Boolean);
+
+  if (allowedAuthors?.length && pullRequest && !allowedAuthors.includes(pullRequest.author)) {
     return undefined;
   }
 
   return {
+    eventName,
     action: body.action,
-    number: body.pull_request.number,
-    title: body.pull_request.title,
-    author: body.pull_request.user?.login ?? "",
-    htmlUrl: body.pull_request.html_url,
+    repository,
+    pullRequest,
   };
 }

@@ -1,8 +1,8 @@
 import { Hono } from "hono";
-import { pullRequestEventFromPayload, verifyGitHubSignature, type PullRequestEvent } from "./github-webhook.js";
+import { githubEventSummaryFromPayload, verifyGitHubSignature, type GitHubEventSummary } from "./github-webhook.js";
 
 export type ChatInvoker = (message: string) => Promise<string>;
-export type { PullRequestEvent };
+export type { GitHubEventSummary };
 
 const optionalConfig = [
   "GITHUB_PERSONAL_ACCESS_TOKEN",
@@ -18,7 +18,8 @@ export function createApp(options: {
   invoke: ChatInvoker;
   webhookSecret: string;
   githubRepo: string;
-  onPullRequest: (event: PullRequestEvent) => void | Promise<void>;
+  authorFilter?: string;
+  onGitHubEvent: (summary: GitHubEventSummary) => void | Promise<void>;
 }) {
   const app = new Hono();
 
@@ -53,22 +54,28 @@ export function createApp(options: {
       return c.json({ error: "Invalid GitHub Signature" }, 401);
     }
 
-    const eventName = c.req.header("x-github-event");
-    if (eventName == "ping") {
-      return c.json({ ok : true});
+    const eventName = c.req.header("x-github-event") ?? "";
+    if (eventName === "ping") {
+      return c.json({ ok: true });
     }
 
-    if (eventName == "pull_request") {
-      let payload: unknown;
-      try {
-        payload = JSON.parse(rawBody);
-      } catch {
-        return c.json({ ok: true });
-      }
-      const event = pullRequestEventFromPayload(payload, options.githubRepo);
-      if (event) {
-        await options.onPullRequest(event);
-      }
+    let payload: unknown;
+    try {
+      payload = JSON.parse(rawBody);
+    } catch {
+      return c.json({ ok: true });
+    }
+
+    const summary = githubEventSummaryFromPayload(
+      payload,
+      eventName,
+      options.githubRepo,
+      options.authorFilter,
+    );
+    if (summary) {
+      void Promise.resolve(options.onGitHubEvent(summary)).catch((error: unknown) => {
+        console.error("GitHub event handler failed", error);
+      });
     }
 
     return c.json({ ok: true });

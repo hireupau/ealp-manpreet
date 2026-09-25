@@ -1,5 +1,5 @@
 import { serve } from "@hono/node-server";
-import { createLmStudioAgent } from "./agent.js";
+import { createLmStudioAgent, handleGitHubEvent } from "./agent.js";
 import { createApp } from "./app.js";
 import { replyText } from "./reply.js";
 import { createAndStartSmeeClient } from "./smee.js";
@@ -26,11 +26,8 @@ const app = createApp({
   invoke: async (message) => replyText((await agent.invoke(message)).lastMessage),
   webhookSecret,
   githubRepo,
-  onPullRequest: (event) => {
-    console.log(
-      `Pull request ${event.action}: #${event.number} ${event.title} by ${event.author} (${event.htmlUrl})`,
-    );
-  },
+  authorFilter: process.env.GITHUB_AUTHOR_FILTER,
+  onGitHubEvent: handleGitHubEvent,
 });
 
 let smee: ReturnType<typeof createAndStartSmeeClient>;

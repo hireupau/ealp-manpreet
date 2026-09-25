@@ -35,6 +35,7 @@ export type JiraIssue = {
 export type JiraClient = {
   getIssue: (key: string) => Promise<JiraIssue>;
   transitionIssue: (key: string, statusName: string) => Promise<void>;
+  addComment: (key: string, text: string) => Promise<void>;
 };
 
 export function createJiraClient(env: NodeJS.ProcessEnv = process.env): JiraClient {
@@ -98,5 +99,23 @@ export function createJiraClient(env: NodeJS.ProcessEnv = process.env): JiraClie
     });
   }
 
-  return { getIssue, transitionIssue };
+  async function addComment(key: string, text: string): Promise<void> {
+    await request(`/issue/${encodeURIComponent(key)}/comment`, {
+      method: "POST",
+      body: JSON.stringify({
+        body: {
+          type: "doc",
+          version: 1,
+          content: [
+            {
+              type: "paragraph",
+              content: [{ type: "text", text }],
+            },
+          ],
+        },
+      }),
+    });
+  }
+
+  return { getIssue, transitionIssue, addComment };
 }
