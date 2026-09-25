@@ -1,6 +1,8 @@
 import { Hono } from "hono";
+import { pullRequestEventFromPayload, verifyGitHubSignature, type PullRequestEvent } from "./github-webhook.js";
 
 export type ChatInvoker = (message: string) => Promise<string>;
+export type { PullRequestEvent };
 
 const optionalConfig = [
   "GITHUB_PERSONAL_ACCESS_TOKEN",
@@ -12,7 +14,12 @@ const optionalConfig = [
   "SMEE_URL",
 ] as const;
 
-export function createApp(options: { invoke: ChatInvoker }) {
+export function createApp(options: {
+  invoke: ChatInvoker;
+  webhookSecret: string;
+  githubRepo: string;
+  onPullRequest: (event: PullRequestEvent) => void | Promise<void>;
+}) {
   const app = new Hono();
 
   app.get("/health", (c) =>
@@ -36,6 +43,35 @@ export function createApp(options: { invoke: ChatInvoker }) {
 
     const reply = await options.invoke(message);
     return c.json({ reply });
+  });
+
+  app.post("/webhooks/github", async (c) => {
+    const rawBody = await c.req.text();
+    const signature = c.req.header("x-hub-signature-256");
+
+    if (!verifyGitHubSignature(rawBody, signature, options.webhookSecret)) {
+      return c.json({ error: "Invalid GitHub Signature" }, 401);
+    }
+
+    const eventName = c.req.header("x-github-event");
+    if (eventName == "ping") {
+      return c.json({ ok : true});
+    }
+
+    if (eventName == "pull_request") {
+      let payload: unknown;
+      try {
+        payload = JSON.parse(rawBody);
+      } catch {
+        return c.json({ ok: true });
+      }
+      const event = pullRequestEventFromPayload(payload, options.githubRepo);
+      if (event) {
+        await options.onPullRequest(event);
+      }
+    }
+
+    return c.json({ ok: true });
   });
 
   return app;

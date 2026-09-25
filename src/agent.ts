@@ -23,6 +23,7 @@ export function createLmStudioAgent(env: NodeJS.ProcessEnv = process.env): Agent
     modelId: modelId,
     apiKey: apiKey,
     clientConfig: { baseURL },
+    temperature: 0.7,
   });
 
   return new Agent({

@@ -21,6 +21,7 @@
     "@strands-agents/sdk": "^1.19.0",
     "hono": "^4.13.9",
     "openai": "^6.49.0",
+    "smee-client": "^5.0.0",
     "zod": "^4.6.5"
   },
   "devDependencies": {
