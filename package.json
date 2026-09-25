@@ -10,7 +10,8 @@
     "dev": "tsx watch --env-file=.env src/main.ts",
     "start": "tsx --env-file=.env src/main.ts",
     "test": "tsx --test \"src/**/*.test.ts\"",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "try:jira": "tsx --env-file=.env scripts/try-jira.ts"
   },
   "repository": {
     "type": "git",
